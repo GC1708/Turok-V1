@@ -1,0 +1,64 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- Create the UI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AimbotUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- ImageButton (Circle)
+local aimButton = Instance.new("ImageButton")
+aimButton.Name = "AimButton"
+aimButton.Size = UDim2.new(0, 50, 0, 50)
+aimButton.Position = UDim2.new(1, -60, 0, 10) -- Top-right
+aimButton.BackgroundTransparency = 1
+aimButton.Image = "rbxassetid://7411011041"
+aimButton.Parent = screenGui
+
+-- Make the button circular
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(1, 0)
+corner.Parent = aimButton
+
+-- Function to get closest visible enemy head
+local function getClosestHead()
+	local closestPlayer = nil
+	local shortestDistance = math.huge
+
+	for _, player in pairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+			local head = player.Character.Head
+			local distance = (head.Position - Camera.CFrame.Position).Magnitude
+
+			local rayParams = RaycastParams.new()
+			rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+			rayParams.FilterDescendantsInstances = {LocalPlayer.Character}
+
+			local result = workspace:Raycast(Camera.CFrame.Position, (head.Position - Camera.CFrame.Position).Unit * distance, rayParams)
+			if not result or result.Instance:IsDescendantOf(player.Character) then
+				if distance < shortestDistance then
+					shortestDistance = distance
+					closestPlayer = player
+				end
+			end
+		end
+	end
+
+	if closestPlayer and closestPlayer.Character then
+		return closestPlayer.Character:FindFirstChild("Head")
+	end
+	return nil
+end
+
+-- Aimbot logic
+local function aimAtHead()
+	local head = getClosestHead()
+	if head then
+		Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, head.Position)
+	end
+end
+
+-- Connect button click
+aimButton.MouseButton1Click:Connect(aimAtHead)
