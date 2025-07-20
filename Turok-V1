@@ -8,53 +8,58 @@ screenGui.Name = "AimbotUI"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- ImageButton (Circle)
+-- ImageButton (Circular)
 local aimButton = Instance.new("ImageButton")
 aimButton.Name = "AimButton"
 aimButton.Size = UDim2.new(0, 50, 0, 50)
-aimButton.Position = UDim2.new(1, -60, 0, 10) -- Top-right
+aimButton.Position = UDim2.new(1, -60, 0.5, -25) -- Middle-right
 aimButton.BackgroundTransparency = 1
 aimButton.Image = "rbxassetid://7411011041"
 aimButton.Parent = screenGui
 
--- Make the button circular
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(1, 0)
-corner.Parent = aimButton
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = UDim.new(1, 0)
+uiCorner.Parent = aimButton
 
--- Function to get closest visible enemy head
-local function getClosestHead()
-	local closestPlayer = nil
-	local shortestDistance = math.huge
+-- Target the player whose head is closest to the center of the screen
+local function getTargetByCameraLook()
+	local bestTarget = nil
+	local smallestAngle = math.huge
 
-	for _, player in pairs(Players:GetPlayers()) do
+	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
 			local head = player.Character.Head
-			local distance = (head.Position - Camera.CFrame.Position).Magnitude
+			local directionToHead = (head.Position - Camera.CFrame.Position).Unit
+			local cameraLookVector = Camera.CFrame.LookVector
 
+			-- Measure angle between camera forward and head direction
+			local dot = directionToHead:Dot(cameraLookVector)
+			local angle = math.acos(math.clamp(dot, -1, 1)) -- in radians
+
+			-- Raycast to ensure it's visible
+			local distance = (head.Position - Camera.CFrame.Position).Magnitude
 			local rayParams = RaycastParams.new()
 			rayParams.FilterType = Enum.RaycastFilterType.Blacklist
 			rayParams.FilterDescendantsInstances = {LocalPlayer.Character}
 
-			local result = workspace:Raycast(Camera.CFrame.Position, (head.Position - Camera.CFrame.Position).Unit * distance, rayParams)
-			if not result or result.Instance:IsDescendantOf(player.Character) then
-				if distance < shortestDistance then
-					shortestDistance = distance
-					closestPlayer = player
-				end
+			local result = workspace:Raycast(Camera.CFrame.Position, directionToHead * distance, rayParams)
+
+			if (not result or result.Instance:IsDescendantOf(player.Character)) and angle < smallestAngle then
+				smallestAngle = angle
+				bestTarget = player
 			end
 		end
 	end
 
-	if closestPlayer and closestPlayer.Character then
-		return closestPlayer.Character:FindFirstChild("Head")
+	if bestTarget and bestTarget.Character then
+		return bestTarget.Character:FindFirstChild("Head")
 	end
 	return nil
 end
 
--- Aimbot logic
+-- Aim function
 local function aimAtHead()
-	local head = getClosestHead()
+	local head = getTargetByCameraLook()
 	if head then
 		Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, head.Position)
 	end
