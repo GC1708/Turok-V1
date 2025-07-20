@@ -21,16 +21,16 @@ local uiCorner = Instance.new("UICorner")
 uiCorner.CornerRadius = UDim.new(1, 0)
 uiCorner.Parent = aimButton
 
--- State
-local aimLockEnabled = false
+-- Toggle state
+local aimlockEnabled = false
 
--- Toggle logic
+-- Toggle logic on click
 aimButton.MouseButton1Click:Connect(function()
-	aimLockEnabled = not aimLockEnabled
-	aimButton.ImageColor3 = aimLockEnabled and Color3.fromRGB(255, 80, 80) or Color3.new(1, 1, 1)
+	aimlockEnabled = not aimlockEnabled
+	aimButton.ImageColor3 = aimlockEnabled and Color3.fromRGB(255, 80, 80) or Color3.new(1, 1, 1)
 end)
 
--- Get target closest to camera center
+-- Find player closest to camera center
 local function getTargetByCameraLook()
 	local bestTarget = nil
 	local smallestAngle = math.huge
@@ -42,9 +42,8 @@ local function getTargetByCameraLook()
 			local cameraLookVector = Camera.CFrame.LookVector
 
 			local dot = directionToHead:Dot(cameraLookVector)
-			local angle = math.acos(math.clamp(dot, -1, 1)) -- radians
+			local angle = math.acos(math.clamp(dot, -1, 1))
 
-			-- Raycast for visibility
 			local distance = (head.Position - Camera.CFrame.Position).Magnitude
 			local rayParams = RaycastParams.new()
 			rayParams.FilterType = Enum.RaycastFilterType.Blacklist
@@ -65,9 +64,9 @@ local function getTargetByCameraLook()
 	return nil
 end
 
--- Auto-aim loop
+-- Update every frame if aimlock is on
 RunService.RenderStepped:Connect(function()
-	if aimLockEnabled then
+	if aimlockEnabled then
 		local head = getTargetByCameraLook()
 		if head then
 			Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, head.Position)
