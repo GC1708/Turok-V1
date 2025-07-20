@@ -1,18 +1,18 @@
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
--- Create the UI
+-- UI Setup
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AimbotUI"
+screenGui.Name = "AimLockUI"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- ImageButton (Circular)
 local aimButton = Instance.new("ImageButton")
-aimButton.Name = "AimButton"
+aimButton.Name = "AimLockButton"
 aimButton.Size = UDim2.new(0, 50, 0, 50)
-aimButton.Position = UDim2.new(1, -60, 0.5, -25) -- Middle-right
+aimButton.Position = UDim2.new(1, -60, 0.5, -25)
 aimButton.BackgroundTransparency = 1
 aimButton.Image = "rbxassetid://7411011041"
 aimButton.Parent = screenGui
@@ -21,7 +21,16 @@ local uiCorner = Instance.new("UICorner")
 uiCorner.CornerRadius = UDim.new(1, 0)
 uiCorner.Parent = aimButton
 
--- Target the player whose head is closest to the center of the screen
+-- State
+local aimLockEnabled = false
+
+-- Toggle logic
+aimButton.MouseButton1Click:Connect(function()
+	aimLockEnabled = not aimLockEnabled
+	aimButton.ImageColor3 = aimLockEnabled and Color3.fromRGB(255, 80, 80) or Color3.new(1, 1, 1)
+end)
+
+-- Get target closest to camera center
 local function getTargetByCameraLook()
 	local bestTarget = nil
 	local smallestAngle = math.huge
@@ -32,11 +41,10 @@ local function getTargetByCameraLook()
 			local directionToHead = (head.Position - Camera.CFrame.Position).Unit
 			local cameraLookVector = Camera.CFrame.LookVector
 
-			-- Measure angle between camera forward and head direction
 			local dot = directionToHead:Dot(cameraLookVector)
-			local angle = math.acos(math.clamp(dot, -1, 1)) -- in radians
+			local angle = math.acos(math.clamp(dot, -1, 1)) -- radians
 
-			-- Raycast to ensure it's visible
+			-- Raycast for visibility
 			local distance = (head.Position - Camera.CFrame.Position).Magnitude
 			local rayParams = RaycastParams.new()
 			rayParams.FilterType = Enum.RaycastFilterType.Blacklist
@@ -57,13 +65,12 @@ local function getTargetByCameraLook()
 	return nil
 end
 
--- Aim function
-local function aimAtHead()
-	local head = getTargetByCameraLook()
-	if head then
-		Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, head.Position)
+-- Auto-aim loop
+RunService.RenderStepped:Connect(function()
+	if aimLockEnabled then
+		local head = getTargetByCameraLook()
+		if head then
+			Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, head.Position)
+		end
 	end
-end
-
--- Connect button click
-aimButton.MouseButton1Click:Connect(aimAtHead)
+end)
