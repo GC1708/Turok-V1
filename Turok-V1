@@ -1,75 +1,292 @@
 local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
--- UI Setup
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AimLockUI"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+local LOCK_RADIUS = 60
+local MAX_DISTANCE = 260
 
-local aimButton = Instance.new("ImageButton")
-aimButton.Name = "AimLockButton"
-aimButton.Size = UDim2.new(0, 50, 0, 50)
-aimButton.Position = UDim2.new(1, -60, 0.5, -25)
-aimButton.BackgroundTransparency = 1
-aimButton.Image = "rbxassetid://7411011041"
-aimButton.Parent = screenGui
+local Holding = false
+local LockedTarget = nil
 
-local uiCorner = Instance.new("UICorner")
-uiCorner.CornerRadius = UDim.new(1, 0)
-uiCorner.Parent = aimButton
+local SystemEnabled = true
+local ESPCache = {}
 
--- Toggle state
-local aimlockEnabled = false
+-- UI
+local gui = Instance.new("ScreenGui")
+gui.Name = "AIMLOCK_UI"
+gui.ResetOnSpawn = false
+gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- Toggle logic on click
-aimButton.MouseButton1Click:Connect(function()
-	aimlockEnabled = not aimlockEnabled
-	aimButton.ImageColor3 = aimlockEnabled and Color3.fromRGB(255, 80, 80) or Color3.new(1, 1, 1)
-end)
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(0,140,0,32)
+button.Position = UDim2.new(0,10,0,10)
+button.BackgroundColor3 = Color3.fromRGB(35,35,35)
+button.TextColor3 = Color3.fromRGB(255,255,255)
+button.TextScaled = true
+button.Font = Enum.Font.SourceSansBold
+button.Text = "AIMLOCK : ON"
+button.Parent = gui
 
--- Find player closest to camera center
-local function getTargetByCameraLook()
-	local bestTarget = nil
-	local smallestAngle = math.huge
+Instance.new("UICorner", button).CornerRadius = UDim.new(0,8)
 
-	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
-			local head = player.Character.Head
-			local directionToHead = (head.Position - Camera.CFrame.Position).Unit
-			local cameraLookVector = Camera.CFrame.LookVector
+------------------------------------------------
+-- ESP CLEANUP
+------------------------------------------------
+local function clearESP()
+	for _, esp in pairs(ESPCache) do
+		if esp and esp.Gui then
+			esp.Gui:Destroy()
+		end
+	end
+	table.clear(ESPCache)
+end
 
-			local dot = directionToHead:Dot(cameraLookVector)
-			local angle = math.acos(math.clamp(dot, -1, 1))
+------------------------------------------------
+-- ESP CREATION
+------------------------------------------------
+local function createESP(character)
+	if not character then return end
+	if not SystemEnabled then return end
 
-			local distance = (head.Position - Camera.CFrame.Position).Magnitude
-			local rayParams = RaycastParams.new()
-			rayParams.FilterType = Enum.RaycastFilterType.Blacklist
-			rayParams.FilterDescendantsInstances = {LocalPlayer.Character}
+	local head = character:FindFirstChild("Head")
+	if not head then return end
 
-			local result = workspace:Raycast(Camera.CFrame.Position, directionToHead * distance, rayParams)
+	if character:FindFirstChild("AimDot") then return end
 
-			if (not result or result.Instance:IsDescendantOf(player.Character)) and angle < smallestAngle then
-				smallestAngle = angle
-				bestTarget = player
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "AimDot"
+	billboard.Size = UDim2.new(0,10,0,10)
+	billboard.StudsOffset = Vector3.new(0,3,0)
+	billboard.AlwaysOnTop = true
+	billboard.Adornee = head
+
+	local dot = Instance.new("Frame")
+	dot.Size = UDim2.new(1,0,1,0)
+	dot.BorderSizePixel = 0
+	dot.BackgroundColor3 = Color3.fromRGB(255,0,0)
+	dot.Parent = billboard
+
+	Instance.new("UICorner", dot).CornerRadius = UDim.new(1,0)
+
+	billboard.Parent = character
+
+	ESPCache[character] = {
+		Gui = billboard,
+		Dot = dot
+	}
+end
+
+------------------------------------------------
+-- PLAYER SETUP
+------------------------------------------------
+local function setupPlayer(plr)
+	if plr == LocalPlayer then return end
+
+	local function onCharacter(character)
+		task.wait(1)
+		if SystemEnabled then
+			createESP(character)
+		end
+	end
+
+	plr.CharacterAdded:Connect(onCharacter)
+
+	if plr.Character then
+		onCharacter(plr.Character)
+	end
+end
+
+for _, plr in ipairs(Players:GetPlayers()) do
+	setupPlayer(plr)
+end
+
+Players.PlayerAdded:Connect(setupPlayer)
+
+------------------------------------------------
+-- GET TARGET
+------------------------------------------------
+local function getClosestTarget()
+	local mousePos = UserInputService:GetMouseLocation()
+
+	local closest = nil
+	local shortest = LOCK_RADIUS
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= LocalPlayer and plr.Character then
+
+			local torso = plr.Character:FindFirstChild("UpperTorso")
+			local humanoid = plr.Character:FindFirstChild("Humanoid")
+
+			if torso and humanoid and humanoid.Health > 0 then
+
+				local dist3D = (torso.Position - Camera.CFrame.Position).Magnitude
+
+				if dist3D <= MAX_DISTANCE then
+
+					local screenPos, onScreen =
+						Camera:WorldToViewportPoint(torso.Position)
+
+					if onScreen then
+						local dist2D =
+							(Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+
+						if dist2D < shortest then
+							shortest = dist2D
+							closest = torso
+						end
+					end
+				end
 			end
 		end
 	end
 
-	if bestTarget and bestTarget.Character then
-		return bestTarget.Character:FindFirstChild("Head")
-	end
-	return nil
+	return closest
 end
 
--- Update every frame if aimlock is on
+------------------------------------------------
+-- BUTTON TOGGLE
+------------------------------------------------
+button.MouseButton1Click:Connect(function()
+	SystemEnabled = not SystemEnabled
+
+	if SystemEnabled then
+		button.Text = "AIMLOCK : ON"
+		button.Visible = true
+	else
+		button.Text = "AIMLOCK : OFF"
+		button.Visible = false
+
+		Holding = false
+		LockedTarget = nil
+
+		clearESP()
+	end
+end)
+
+------------------------------------------------
+-- KEYBIND T (MASTER TOGGLE)
+------------------------------------------------
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp then return end
+
+	if input.KeyCode == Enum.KeyCode.T then
+
+		SystemEnabled = not SystemEnabled
+
+		if SystemEnabled then
+			button.Visible = true
+			button.Text = "AIMLOCK : ON"
+		else
+			button.Text = "AIMLOCK : OFF"
+			button.Visible = false
+
+			Holding = false
+			LockedTarget = nil
+
+			clearESP()
+		end
+	end
+end)
+
+------------------------------------------------
+-- INPUT HOLD
+------------------------------------------------
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp then return end
+
+	if SystemEnabled and input.UserInputType == Enum.UserInputType.MouseButton2 then
+		Holding = true
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		Holding = false
+		LockedTarget = nil
+	end
+end)
+
+------------------------------------------------
+-- MAIN LOOP
+------------------------------------------------
 RunService.RenderStepped:Connect(function()
-	if aimlockEnabled then
-		local head = getTargetByCameraLook()
-		if head then
-			Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, head.Position)
+
+	if not SystemEnabled then
+		Holding = false
+		LockedTarget = nil
+		return
+	end
+
+	-- AIMLOCK
+	if Holding then
+
+		if not LockedTarget then
+			LockedTarget = getClosestTarget()
+		end
+
+		if LockedTarget and LockedTarget.Parent then
+
+			local dist = (LockedTarget.Position - Camera.CFrame.Position).Magnitude
+
+			if dist <= MAX_DISTANCE then
+
+				local char = LockedTarget.Parent
+				local upper = char:FindFirstChild("UpperTorso")
+				local head = char:FindFirstChild("Head")
+
+				if upper and head then
+
+					local aim = (upper.Position * 0.8) + (head.Position * 0.2)
+
+					Camera.CFrame = Camera.CFrame:Lerp(
+						CFrame.new(Camera.CFrame.Position, aim),
+						0.2
+					)
+				end
+			else
+				LockedTarget = nil
+			end
+		end
+	end
+
+	-- ESP
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= LocalPlayer and plr.Character then
+
+			local char = plr.Character
+			local head = char:FindFirstChild("Head")
+			local hum = char:FindFirstChild("Humanoid")
+
+			if head and hum then
+
+				if not char:FindFirstChild("AimDot") then
+					createESP(char)
+				end
+
+				local esp = ESPCache[char]
+
+				if esp and esp.Gui then
+
+					local dist =
+						(head.Position - Camera.CFrame.Position).Magnitude
+
+					if SystemEnabled then
+						esp.Gui.Enabled =
+							hum.Health > 0 and dist <= MAX_DISTANCE
+					else
+						esp.Gui.Enabled = false
+					end
+
+					if LockedTarget and LockedTarget.Parent == char then
+						esp.Dot.BackgroundColor3 = Color3.fromRGB(0,255,0)
+					else
+						esp.Dot.BackgroundColor3 = Color3.fromRGB(255,0,0)
+					end
+				end
+			end
 		end
 	end
 end)
